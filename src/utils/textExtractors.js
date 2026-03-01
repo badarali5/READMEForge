@@ -46,10 +46,11 @@ function splitSentences(text) {
     .split(/(?<=[.!?])\s+|\n+/)
     .map(s => s.trim())
     .filter(Boolean)
-    .filter(s => s.length > 8);
+    .map(normaliseSentence)
+    .filter(s => s.length >= 12 && s.length <= 260);
 }
 
-function startsWithCue(sentence, cues) {
+function containsCue(sentence, cues) {
   const lower = sentence.toLowerCase();
   return cues.some(c => lower.includes(c));
 }
@@ -61,82 +62,130 @@ function normaliseSentence(sentence) {
     .trim();
 }
 
-export function extractOverview(text, rawTitle) {
-  const sentences = splitSentences(text).map(normaliseSentence);
-  const ignoreCues = [
-    "solves",
-    "problem",
-    "pain point",
-    "struggle",
-    "cannot",
-    "can't",
-    "fixes",
-    "addresses",
-    "visit ",
-    "check it out",
-  ];
+function ensureSentence(s) {
+  if (!s) return null;
+  const out = s.trim();
+  if (!out) return null;
+  return /[.!?]$/.test(out) ? out : `${out}.`;
+}
 
-  const overviewCandidates = sentences.filter(s => !startsWithCue(s, ignoreCues));
-  const chosen = overviewCandidates[0] || sentences[0] || "";
-  if (!chosen) return null;
+function isNoisySentence(sentence) {
+  const lower = sentence.toLowerCase();
+  return (
+    /https?:\/\//i.test(sentence) ||
+    /\b\w+\.\w{2,}(?:\/\S*)?\b/.test(sentence) ||
+    /\b\d[\d,]*\+?\s*(users?|downloads?|stars?|sessions?|views?|visits?)\b/i.test(sentence) ||
+    lower.startsWith("visit ") ||
+    lower.startsWith("check it out")
+  );
+}
 
-  const clean = chosen.replace(/^\s*(this|it)\s+(is|does)\s+/i, "").trim();
-  if (!clean) return null;
+function scoreOverviewSentence(sentence) {
+  const lower = sentence.toLowerCase();
+  let score = 0;
 
-  if (rawTitle && clean.toLowerCase().startsWith(rawTitle.toLowerCase())) {
-    return clean.endsWith(".") ? clean : `${clean}.`;
+  if (isNoisySentence(sentence)) score -= 4;
+  if (containsCue(lower, ["problem", "pain point", "struggle", "cannot", "can't", "solves", "fixes", "addresses"])) score -= 3;
+  if (containsCue(lower, ["has ", "includes", "features", "supports", "provides", "allows", "built with", "uses "])) score -= 1;
+  if (containsCue(lower, ["app", "tool", "platform", "project", "for "])) score += 3;
+  if (sentence.length >= 30 && sentence.length <= 170) score += 2;
+
+  return score;
+}
+
+function scoreProblemSentence(sentence) {
+  const lower = sentence.toLowerCase();
+  let score = 0;
+
+  if (containsCue(lower, ["problem", "pain point", "struggle", "cannot", "can't", "unable", "difficulty", "lack of", "missing", "miss "])) score += 5;
+  if (containsCue(lower, ["solves", "addresses", "fixes", "tackles"])) score += 4;
+  if (isNoisySentence(sentence)) score -= 2;
+  if (containsCue(lower, ["has ", "includes", "features", "built with", "uses "])) score -= 1;
+
+  return score;
+}
+
+function scoreSolutionSentence(sentence) {
+  const lower = sentence.toLowerCase();
+  let score = 0;
+
+  if (containsCue(lower, ["has ", "includes", "features", "supports", "provides", "allows", "enables"])) score += 6;
+  if (containsCue(lower, ["built with", "uses "])) score += 3;
+  if (containsCue(lower, ["solves", "addresses", "fixes", "tackles"])) score += 1;
+  if (containsCue(lower, ["frontend", "backend", "database", "api", "architecture"])) score -= 1;
+  if (isNoisySentence(sentence)) score -= 3;
+  if (containsCue(lower, ["problem", "pain point", "struggle", "cannot", "can't"])) score -= 2;
+
+  return score;
+}
+
+function pickBestSentence(sentences, scorer, minScore = 1) {
+  let best = null;
+  let bestScore = -Infinity;
+
+  for (const s of sentences) {
+    const score = scorer(s);
+    if (score > bestScore) {
+      bestScore = score;
+      best = s;
+    }
   }
-  return clean.endsWith(".") ? clean : `${clean}.`;
+
+  if (bestScore < minScore) return null;
+  return best;
+}
+
+export function extractOverview(text, rawTitle) {
+  const sentences = splitSentences(text);
+  const picked = pickBestSentence(sentences, scoreOverviewSentence, 1);
+
+  if (picked) {
+    const clean = picked.replace(/^\s*(this|it)\s+(is|does)\s+/i, "").trim();
+    return ensureSentence(clean);
+  }
+
+  if (rawTitle) return `${rawTitle} is designed to solve a focused real-world problem for its target users.`;
+  return null;
 }
 
 export function extractProblemStatement(text) {
-  const sentences = splitSentences(text).map(normaliseSentence);
+  const sentences = splitSentences(text);
+  const picked = pickBestSentence(sentences, scoreProblemSentence, 2);
 
-  const strongProblem = sentences.find(s =>
-    startsWithCue(s.toLowerCase(), [
-      "problem",
-      "pain point",
-      "users struggle",
-      "users miss",
-      "users can't",
-      "users cannot",
-      "students miss",
-      "developers struggle",
-      "lack of",
-    ])
-  );
-  if (strongProblem) return strongProblem.endsWith(".") ? strongProblem : `${strongProblem}.`;
-
-  const solveStyle = sentences.find(s =>
-    startsWithCue(s.toLowerCase(), ["solves", "addresses", "fixes", "tackles"])
-  );
-  if (solveStyle) return solveStyle.endsWith(".") ? solveStyle : `${solveStyle}.`;
+  if (picked) {
+    const m = picked.match(/(?:solves?|addresses?|fixes?|tackles?)\s+(?:the\s+)?(?:problem\s*(?:of|that)?\s*)?(.+)/i);
+    if (m && m[1]) {
+      const tail = m[1].replace(/^\s*(where|of|that)\s+/i, "").trim();
+      if (tail.length > 8) return ensureSentence(tail.charAt(0).toUpperCase() + tail.slice(1));
+    }
+    return ensureSentence(picked);
+  }
 
   return extractProblem(text);
 }
 
 export function extractSolution(text, rawTitle, features = []) {
-  const sentences = splitSentences(text).map(normaliseSentence);
-  const solutionCues = [
-    "has ",
-    "includes",
-    "features",
-    "supports",
-    "built with",
-    "uses ",
-    "provides",
-    "allows",
-  ];
+  const sentences = splitSentences(text);
+  const picked = pickBestSentence(sentences, scoreSolutionSentence, 2);
 
-  const solutionSentence = sentences.find(s => startsWithCue(s.toLowerCase(), solutionCues));
-  if (solutionSentence) {
-    return solutionSentence.endsWith(".") ? solutionSentence : `${solutionSentence}.`;
+  if (picked) {
+    const cleaned = picked
+      .replace(/^(this|it)\s+/i, "")
+      .replace(/^(we|our\s+project)\s+/i, "")
+      .trim();
+    return ensureSentence(cleaned);
   }
 
   if (features.length > 0) {
-    const top = features.slice(0, 3).map(f => toTitleCase(f.replace(/[.!?]$/, "")));
-    return `${rawTitle} delivers core functionality through ${top.join(", ")}${features.length > 3 ? ", and more" : ""}.`;
+    const top = features
+      .filter(f => !isNoisySentence(f))
+      .slice(0, 4)
+      .map(f => toTitleCase(f.replace(/[.!?]$/, "")));
+
+    if (top.length > 0) {
+      return `${rawTitle} solves this through ${top.join(", ")}${features.length > 4 ? ", and additional capabilities" : ""}.`;
+    }
   }
 
-  return `${rawTitle} provides a structured workflow that helps users complete key tasks with less friction.`;
+  return `${rawTitle} provides a focused workflow that reduces friction and helps users complete key tasks efficiently.`;
 }
