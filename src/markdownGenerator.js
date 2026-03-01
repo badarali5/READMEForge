@@ -56,7 +56,7 @@ function generateInstallBlock(tech) {
 }
 
 export function generateMarkdown(parsed) {
-  const { rawTitle, tech, techMissing, features, isProposed, problem, socialProof, mode } = parsed;
+  const { rawTitle, tech, techMissing, features, isProposed, overview, problem, solution, socialProof, mode } = parsed;
   const meta = MODE_META[mode] || MODE_META.student;
 
   // ── Tech stack table: TBD rows if stack unknown ──────────────────────────
@@ -90,6 +90,14 @@ export function generateMarkdown(parsed) {
   const problemText = problem
     ? problem.charAt(0).toUpperCase() + problem.slice(1)
     : "Many users face significant inefficiencies when attempting to accomplish key tasks in this domain. Existing solutions are either too complex, too costly, or fail to adequately address the core need.";
+
+  const overviewText = overview
+    ? overview.charAt(0).toUpperCase() + overview.slice(1)
+    : `**${rawTitle}** is a ${mode === "saas" ? "SaaS product" : mode === "opensource" ? "open-source tool" : "project"} built to address a clear, focused problem for its target users. The project prioritises reliability, ease of use, and a clean developer experience.${techMissing ? " *(Tech stack to be confirmed — contributions and suggestions welcome.)*" : ""}`;
+
+  const solutionText = solution
+    ? solution.charAt(0).toUpperCase() + solution.slice(1)
+    : `**${rawTitle}** addresses this by providing a well-structured interface backed by a considered architecture. The goal is to reduce friction, shorten time-to-value, and deliver a polished experience without unnecessary complexity.`;
 
   // ── Tagline ───────────────────────────────────────────────────────────────
   const verb = rawTitle.toLowerCase().match(/\b(finder|tracker|manager|monitor|generator|builder|analyser|analyzer)\b/) ? "streamlining" : "powering";
@@ -128,7 +136,7 @@ ${meta.badge}
 
 ## 📖 Overview
 
-**${rawTitle}** is a ${mode === "saas" ? "SaaS product" : mode === "opensource" ? "open-source tool" : "project"} built to address a clear, focused problem for its target users. The project prioritises reliability, ease of use, and a clean developer experience.${techMissing ? " *(Tech stack to be confirmed — contributions and suggestions welcome.)*" : ""}
+${overviewText}
 ${socialProofSection}
 ---
 
@@ -140,7 +148,7 @@ ${problemText}
 
 ## 💡 Solution
 
-**${rawTitle}** addresses this by providing a well-structured interface backed by a considered architecture. The goal is to reduce friction, shorten time-to-value, and deliver a polished experience without unnecessary complexity.
+${solutionText}
 
 ---
 

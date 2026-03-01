@@ -2,7 +2,7 @@
 
 import { sanitiseCasualTone } from "./utils/casualTone.js";
 import { detectTechStack } from "./utils/techStack.js";
-import { extractFeatures, extractTitle, extractProblem } from "./utils/textExtractors.js";
+import { extractFeatures, extractTitle, extractOverview, extractProblemStatement, extractSolution } from "./utils/textExtractors.js";
 import { classifyInput, expandFeaturesConservatively } from "./utils/featureExpander.js";
 import { extractSocialProof } from "./utils/socialProof.js";
 import { convertDomainsToLinks } from "./utils/domainLinks.js";
@@ -22,9 +22,11 @@ export function parseProjectIdea(text, mode) {
     features = expandFeaturesConservatively(clean, features);
   }
 
-  // Step 4 — title, problem
+  // Step 4 — title, overview/problem/solution
   const rawTitle = extractTitle(clean);
-  const problem = extractProblem(clean);
+  const overview = extractOverview(clean, rawTitle);
+  const problem = extractProblemStatement(clean);
+  const solution = extractSolution(clean, rawTitle, features);
 
   // Step 5 — social proof (spec-exact + extended)
   const socialProof = extractSocialProof(clean);
@@ -40,7 +42,9 @@ export function parseProjectIdea(text, mode) {
     features,
     isProposed,   // true when input < 10 words → label section "Proposed Features"
     wordCount,
+    overview,
     problem,
+    solution,
     socialProof,
     mode,
   };
